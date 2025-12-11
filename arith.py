@@ -1,7 +1,7 @@
 
-a = 2
-b = 3
+a = int(input("Enter a : "))
+b = int(input("Enter a : "))
 c = a + b
 d = a - b
-print("c=",c)
-print("d=",d)
+print("Addition = ",c)
+print("Subtraction =",d)
