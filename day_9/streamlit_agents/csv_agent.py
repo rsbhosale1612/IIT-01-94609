@@ -1,41 +1,46 @@
-import pandas as pd
-from pandasql import sqldf
 from pandasql import sqldf
 
-def run_sql_query(df, sql):
-    return sqldf(sql, {"df": df})
-
-
+# 1️⃣ Get CSV schema
 def get_schema(df):
-    schema = []
+    schema = {}
     for col in df.columns:
-        schema.append({
-            "column": col,
-            "dtype": str(df[col].dtype)
-        })
+        schema[col] = str(df[col].dtype)
     return schema
 
 
-def run_sql(df, query):
-    pysqldf = lambda q: sqldf(q, {"df" : df})
-    return pysqldf(query)
+# 2️⃣ Convert English question → SQL (simple & safe)
+def english_to_sql(question, df):
+    question = question.lower()
 
-def english_to_sql(question, table_name="df"):
-    q = question.lower()
+    # Numeric columns only
+    numeric_cols = df.select_dtypes(include="number").columns.tolist()
 
-    if "count" in q:
-        return f"SELECT COUNT(*) FROM {table_name}"
+    if not numeric_cols:
+        return None, "❌ No numeric columns found for calculations."
 
-    if "average" in q or "avg" in q:
-        col = q.split("of")[-1].strip()
-        return f"SELECT AVG({col}) FROM {table_name}"
+    col = numeric_cols[0]  # default safe column
 
-    if "maximum" in q or "max" in q:
-        col = q.split("of")[-1].strip()
-        return f"SELECT MAX({col}) FROM {table_name}"
+    if "average" in question or "avg" in question:
+        return f"SELECT AVG({col}) FROM df", None
 
-    if "minimum" in q or "min" in q:
-        col = q.split("of")[-1].strip()
-        return f"SELECT MIN({col}) FROM {table_name}"
+    if "sum" in question:
+        return f"SELECT SUM({col}) FROM df", None
 
-    return f"SELECT * FROM {table_name} LIMIT 5"
+    if "maximum" in question or "max" in question:
+        return f"SELECT MAX({col}) FROM df", None
+
+    if "minimum" in question or "min" in question:
+        return f"SELECT MIN({col}) FROM df", None
+
+    if "count" in question:
+        return "SELECT COUNT(*) FROM df", None
+
+    return None, "❌ Could not understand the question."
+
+
+# 3️⃣ Run SQL safely
+def run_sql_query(df, sql):
+    try:
+        return sqldf(sql, {"df": df})
+    except Exception as e:
+        return f"❌ SQL Error: {e}"
