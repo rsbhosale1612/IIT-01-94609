@@ -42,7 +42,7 @@ def scrape_sunbeam():
                 data.append(text)
 
     driver.quit()
-    return list(set(data))  # remove duplicates
+    return list(set(data)) 
 
 
 def answer_question(data, question):
@@ -77,11 +77,9 @@ def answer_question(data, question):
                 matched_lines.append(line)
                 break
 
-    # ✅ ALWAYS return something useful
     if matched_lines:
         return "\n\n".join(matched_lines[:3])
 
-    # fallback (important)
     return (
         "The Sunbeam website mentions industry-oriented training, "
         "placements, and admission schedules across different pages. "

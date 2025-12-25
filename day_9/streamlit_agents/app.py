@@ -1,22 +1,18 @@
 import streamlit as st
 import pandas as pd
 
-# CSV Agent imports
 from csv_agent import get_schema, english_to_sql, run_sql_query
 
-# Web Agent imports (Selenium-based)
 from web_agent import scrape_sunbeam, answer_question
 
 
-# ================= PAGE CONFIG =================
 st.set_page_config(
-    page_title="🤖 Intelligent Agents App",
+    page_title=" Intelligent Agents App",
     layout="wide"
 )
 
-st.title("🤖 Intelligent Agents using Streamlit")
+st.title(" Intelligent Agents using Streamlit")
 
-# ================= SESSION STATE =================
 if "chat_history" not in st.session_state:
     st.session_state.chat_history = []
 
@@ -24,8 +20,7 @@ if "sunbeam_data" not in st.session_state:
     st.session_state.sunbeam_data = None
 
 
-# ================= SIDEBAR =================
-st.sidebar.header("⚙️ Agent Selector")
+st.sidebar.header(" Agent Selector")
 
 agent = st.sidebar.selectbox(
     "Choose Agent",
@@ -37,16 +32,15 @@ agent = st.sidebar.selectbox(
 
 st.sidebar.divider()
 
-st.sidebar.subheader("🕘 Complete Chat History")
+st.sidebar.subheader(" Complete Chat History")
 for source, q, a in reversed(st.session_state.chat_history):
     st.sidebar.markdown(f"**[{source}] Q:** {q}")
-    st.sidebar.markdown(f"➡️ {a}")
+    st.sidebar.markdown(f" {a}")
     st.sidebar.divider()
 
 
-# ================= CSV AGENT =================
 if agent == "CSV Question Answering Agent":
-    st.header("📊 CSV Question Answering Agent")
+    st.header(" CSV Question Answering Agent")
 
     uploaded_file = st.file_uploader(
         "Upload CSV File",
@@ -88,9 +82,8 @@ if agent == "CSV Question Answering Agent":
                 )
 
 
-# ================= WEB SCRAPING AGENT =================
 elif agent == "Sunbeam Web Scraping Agent":
-    st.header("🌐 Sunbeam Web Scraping Agent (Selenium)")
+    st.header(" Sunbeam Web Scraping Agent (Selenium)")
 
     if st.session_state.sunbeam_data is None:
         with st.spinner("Scraping Sunbeam website using Selenium..."):

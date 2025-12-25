@@ -1,44 +1,89 @@
 import streamlit as st
 import os
 from typing import List
-from sentence_transformers import SentenceTransformer
-from langchain_core.embeddings import Embeddings
+
+from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain_community.vectorstores import Chroma
 from langchain_community.document_loaders import PyPDFLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
+from langchain_openai import ChatOpenAI
+from langchain_core.prompts import PromptTemplate
 
-st.set_page_config(page_title="Resume Shortlisting", layout="wide")
+st.set_page_config(page_title="Resume Shortlisting using RAG", layout="wide")
 
-THRESHOLD = 0.6
 RESUME_DIR = "resumes"
 DB_DIR = "data/chroma_db"
 
 os.makedirs(RESUME_DIR, exist_ok=True)
 os.makedirs(DB_DIR, exist_ok=True)
 
+embeddings = HuggingFaceEmbeddings(
+    model_name="sentence-transformers/all-MiniLM-L6-v2",
+    model_kwargs={"device": "cpu"}
+)
 
-class SimpleEmbeddings(Embeddings):
-    def __init__(self, name):
-        self.model = SentenceTransformer(name, device="cpu")
-
-    def embed_documents(self, texts: List[str]) -> List[List[float]]:
-        return self.model.encode(texts, convert_to_numpy=True).tolist()
-
-    def embed_query(self, text: str) -> List[float]:
-        return self.model.encode(text, convert_to_numpy=True).tolist()
-
-
-embeddings = SimpleEmbeddings("sentence-transformers/all-MiniLM-L6-v2")
 db = Chroma(persist_directory=DB_DIR, embedding_function=embeddings)
 
+llm = ChatOpenAI(
+    model="meta-llama-3.1-8b-instruct",
+    base_url="http://127.0.0.1:1234/v1",
+    api_key="not-needed",
+    temperature=0.1
+)
 
-def get_resumes():
-    return [f for f in os.listdir(RESUME_DIR) if f.endswith(".pdf")]
+
+def load_full_resume_text(path: str) -> str:
+    loader = PyPDFLoader(path)
+    docs = loader.load()
+    return "\n".join([d.page_content for d in docs])[:3000]
+
+
+def score_and_justify_resume(jd: str, resume_text: str):
+    prompt = f"""
+You are an HR evaluator.
+
+Return the result in this exact format:
+
+Score: <number from 0 to 100>
+Decision: Shortlist or Reject
+Reason: <one short sentence>
+
+Job Description:
+{jd}
+
+Resume:
+{resume_text}
+"""
+
+    chain = PromptTemplate.from_template("{input}") | llm
+    output = chain.invoke({"input": prompt}).content
+
+    score = 0
+    decision = "Reject"
+    reason = ""
+
+    for line in output.splitlines():
+        if "Score" in line:
+            score = int("".join(filter(str.isdigit, line)) or 0)
+        elif "Decision" in line:
+            decision = line.split(":", 1)[-1].strip()
+        elif "Reason" in line:
+            reason = line.split(":", 1)[-1].strip()
+
+    return score, decision, reason
+
+
+def delete_embeddings_for_resume(filename: str):
+    db._collection.delete(where={"source": filename})
+    db.persist()
 
 
 def add_resume(path):
     loader = PyPDFLoader(path)
     docs = loader.load()
+
+    for d in docs:
+        d.metadata["source"] = os.path.basename(path)
 
     splitter = RecursiveCharacterTextSplitter(chunk_size=500, chunk_overlap=100)
     parts = splitter.split_documents(docs)
@@ -47,20 +92,26 @@ def add_resume(path):
     db.persist()
 
 
-st.sidebar.title("Resume Manager")
+def delete_resume_file_and_embeddings(filename: str):
+    path = os.path.join(RESUME_DIR, filename)
 
-action = st.sidebar.radio("Action", [
-    "Upload",
-    "List",
-    "Update",
-    "Delete",
-    "Shortlist"
-])
+    if os.path.exists(path):
+        os.remove(path)
+
+    delete_embeddings_for_resume(filename)
+
+
+def get_resumes():
+    return [f for f in os.listdir(RESUME_DIR) if f.endswith(".pdf")]
+
+
+st.sidebar.title("Resume Manager")
+action = st.sidebar.radio("Action", ["Upload", "List", "Update", "Delete", "Shortlist"])
 
 
 if action == "Upload":
     st.header("Upload Resumes")
-    files = st.file_uploader("Select PDF files", type="pdf", accept_multiple_files=True)
+    files = st.file_uploader("Upload PDF", type="pdf", accept_multiple_files=True)
 
     if files:
         for f in files:
@@ -68,89 +119,75 @@ if action == "Upload":
             with open(path, "wb") as out:
                 out.write(f.read())
             add_resume(path)
-
-        st.success("Uploaded and indexed successfully")
-
-
-elif action == "List":
-    st.header("Stored Resumes")
-
-    res = get_resumes()
-    if res:
-        for r in res:
-            st.write("-", r)
-    else:
-        st.info("No resumes found")
+        st.success("Uploaded and indexed")
 
 
 elif action == "Update":
-    st.header("Update Resume")
+    st.header("Update Existing Resume")
 
-    res = get_resumes()
-    name = st.selectbox("Choose resume", res)
+    resumes = get_resumes()
+    selected = st.selectbox("Select resume to update", resumes)
 
-    new_file = st.file_uploader("Upload new PDF", type="pdf")
+    new_file = st.file_uploader("Upload updated PDF", type="pdf")
 
-    if st.button("Update") and name and new_file:
-        path = os.path.join(RESUME_DIR, name)
+    if st.button("Update") and selected and new_file:
+        path = os.path.join(RESUME_DIR, selected)
+
+        delete_embeddings_for_resume(selected)
+
         with open(path, "wb") as out:
             out.write(new_file.read())
+
         add_resume(path)
-        st.success("Updated successfully")
+
+        st.success(f"{selected} updated successfully!")
 
 
 elif action == "Delete":
     st.header("Delete Resume")
 
-    res = get_resumes()
-    name = st.selectbox("Choose resume", res)
+    resumes = get_resumes()
+    selected = st.selectbox("Select resume to delete", resumes)
 
-    if st.button("Delete") and name:
-        os.remove(os.path.join(RESUME_DIR, name))
-        st.success("Deleted")
+    if st.button("Delete") and selected:
+        delete_resume_file_and_embeddings(selected)
+        st.success(f"{selected} deleted successfully!")
+
+
+elif action == "List":
+    st.header("Stored Resumes")
+    for r in get_resumes():
+        st.write("•", r)
 
 
 elif action == "Shortlist":
-    st.header("Shortlist Resumes")
+    st.header("Rank & Justify Resumes")
 
-    jd = st.text_area("Paste job description")
+    jd = st.text_area("Paste Job Description")
 
-    if st.button("Search") and jd:
-        jd_words = set([w.lower() for w in jd.split() if len(w) > 2])
+    if st.button("Rank") and jd:
+        resumes = get_resumes()
 
-        results = db.similarity_search_with_score(jd, k=20)
-
-        ranked = []
-
-        for doc, score in results:
-            text = doc.page_content.lower()
-            matched = [w for w in jd_words if w in text]
-            match_count = len(matched)
-
-            if match_count > 0:
-                ranked.append((doc, match_count, matched))
-
-        ranked.sort(key=lambda x: x[1], reverse=True)
-
-        if not ranked:
-            st.warning("No matching resumes found")
+        if not resumes:
+            st.warning("No resumes uploaded.")
         else:
-            used = set()
-            for i, (doc, count, matched) in enumerate(ranked, 1):
-                txt = doc.page_content.strip()
+            ranked = []
 
-                key = txt[:100]
-                if key in used:
-                    continue
-                used.add(key)
+            with st.spinner("Evaluating resumes..."):
+                for r in resumes:
+                    path = os.path.join(RESUME_DIR, r)
+                    text = load_full_resume_text(path)
+                    score, decision, reason = score_and_justify_resume(jd, text)
+                    ranked.append((r, score, decision, reason))
 
-                pct = round((count / len(jd_words)) * 100, 2)
+            ranked.sort(key=lambda x: x[1], reverse=True)
 
-                st.markdown(f"### Match {i} — Score: {pct}%")
-                st.write(f"**Matched Fields:** {', '.join(matched[:10])}")
-                st.write(txt[:800])
+            st.subheader("🏆 Ranked Resumes")
 
+            for i, (name, score, decision, reason) in enumerate(ranked, 1):
+                st.markdown(f"**{i}. {name} — {score}/100 — {decision}**")
+                st.caption(f"Reason: {reason}")
 
 
 st.title("Resume Shortlisting using RAG")
-st.caption("Use the sidebar to upload, manage and shortlist resumes.")
+st.caption("Grounded, private, explainable resume screening using RAG.")
