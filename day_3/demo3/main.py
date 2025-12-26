@@ -11,7 +11,6 @@ print("Status:", response.status_code)
 
 weather = response.json()
 
-# Check for errors first
 if response.status_code != 200:
     print("Error:", weather["message"])
 else:

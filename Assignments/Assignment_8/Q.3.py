@@ -9,7 +9,6 @@ import requests
 
 load_dotenv()
 
-# ---------------- TOOLS ----------------
 
 @tool
 def calculator(expression: str) -> str:
@@ -39,7 +38,6 @@ def get_current_weather(city: str) -> str:
     except:
         return "Error"
 
-# ---------------- LOGGING MIDDLEWARE ----------------
 
 @wrap_model_call
 def logging_middleware(request, handler):
@@ -64,7 +62,6 @@ def logging_middleware(request, handler):
     print("===== END LOG =====\n")
     return response
 
-# ---------------- MODEL ----------------
 
 llm = init_chat_model(
     model="llama-3.1-8b-instant",
@@ -73,7 +70,6 @@ llm = init_chat_model(
     api_key="non-needed"
 )
 
-# ---------------- AGENT ----------------
 
 agent = create_agent(
     model=llm,
@@ -82,7 +78,6 @@ agent = create_agent(
     system_prompt="Use calculator for math and weather tool for weather. Reply briefly."
 )
 
-# ---------------- CHAT LOOP ----------------
 
 while True:
     user_input = input("You: ")
